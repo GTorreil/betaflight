@@ -129,7 +129,7 @@ void icm20689GyroInit(gyroDev_t *gyro)
 //    delay(100);
     spiBusWriteRegister(&gyro->bus, MPU_RA_PWR_MGMT_1, INV_CLK_PLL);
     delay(15);
-    spiBusWriteRegister(&gyro->bus, MPU_RA_GYRO_CONFIG, INV_FSR_2000DPS << 3 | mpuGyroFCHOICE(gyro));
+    spiBusWriteRegister(&gyro->bus, MPU_RA_GYRO_CONFIG, INV_FSR_2000DPS << 3);
     delay(15);
     spiBusWriteRegister(&gyro->bus, MPU_RA_ACCEL_CONFIG, INV_FSR_16G << 3);
     delay(15);
@@ -166,8 +166,7 @@ bool icm20689SpiGyroDetect(gyroDev_t *gyro)
     gyro->initFn = icm20689GyroInit;
     gyro->readFn = mpuGyroReadSPI;
 
-    // 16.4 dps/lsb scalefactor
-    gyro->scale = 1.0f / 16.4f;
+    gyro->scale = GYRO_SCALE_2000DPS;
 
     return true;
 }

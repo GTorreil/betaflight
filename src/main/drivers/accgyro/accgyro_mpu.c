@@ -47,11 +47,15 @@
 #include "drivers/accgyro/accgyro_mpu6050.h"
 #include "drivers/accgyro/accgyro_mpu6500.h"
 #include "drivers/accgyro/accgyro_spi_bmi160.h"
+#include "drivers/accgyro/accgyro_spi_bmi270.h"
 #include "drivers/accgyro/accgyro_spi_icm20649.h"
 #include "drivers/accgyro/accgyro_spi_icm20689.h"
+#include "drivers/accgyro/accgyro_spi_icm42605.h"
+#include "drivers/accgyro/accgyro_spi_lsm6dso.h"
 #include "drivers/accgyro/accgyro_spi_mpu6000.h"
 #include "drivers/accgyro/accgyro_spi_mpu6500.h"
 #include "drivers/accgyro/accgyro_spi_mpu9250.h"
+#include "drivers/accgyro/accgyro_spi_l3gd20.h"
 #include "drivers/accgyro/accgyro_mpu.h"
 
 #include "pg/pg.h"
@@ -134,20 +138,12 @@ static void mpuIntExtiInit(gyroDev_t *gyro)
     }
 #endif
 
-#if defined (STM32F7)
     IOInit(mpuIntIO, OWNER_GYRO_EXTI, 0);
     EXTIHandlerInit(&gyro->exti, mpuIntExtiHandler);
-    EXTIConfig(mpuIntIO, &gyro->exti, NVIC_PRIO_MPU_INT_EXTI, IO_CONFIG(GPIO_MODE_INPUT,0,GPIO_NOPULL));   // TODO - maybe pullup / pulldown ?
-#else
-    IOInit(mpuIntIO, OWNER_GYRO_EXTI, 0);
-    IOConfigGPIO(mpuIntIO, IOCFG_IN_FLOATING);   // TODO - maybe pullup / pulldown ?
-
-    EXTIHandlerInit(&gyro->exti, mpuIntExtiHandler);
-    EXTIConfig(mpuIntIO, &gyro->exti, NVIC_PRIO_MPU_INT_EXTI, EXTI_Trigger_Rising);
-#endif
+    EXTIConfig(mpuIntIO, &gyro->exti, NVIC_PRIO_MPU_INT_EXTI, IOCFG_IN_FLOATING, BETAFLIGHT_EXTI_TRIGGER_RISING);
     EXTIEnable(mpuIntIO, true);
 }
-#endif // MPU_INT_EXTI
+#endif // USE_GYRO_EXTI
 
 bool mpuAccRead(accDev_t *acc)
 {
@@ -211,14 +207,26 @@ static gyroSpiDetectFn_t gyroSpiDetectFnTable[] = {
 #ifdef  USE_GYRO_SPI_MPU9250
     mpu9250SpiDetect,
 #endif
-#ifdef USE_GYRO_SPI_ICM20649
-    icm20649SpiDetect,
-#endif
 #ifdef USE_GYRO_SPI_ICM20689
     icm20689SpiDetect,  // icm20689SpiDetect detects ICM20602 and ICM20689
 #endif
 #ifdef USE_ACCGYRO_BMI160
     bmi160Detect,
+#endif
+#ifdef USE_ACCGYRO_BMI270
+    bmi270Detect,
+#endif
+#ifdef USE_GYRO_SPI_ICM42605
+    icm42605SpiDetect,
+#endif
+#ifdef USE_GYRO_SPI_ICM20649
+    icm20649SpiDetect,
+#endif
+#ifdef USE_GYRO_L3GD20
+    l3gd20Detect,
+#endif
+#ifdef USE_ACCGYRO_LSM6DSO
+    lsm6dsoDetect,
 #endif
     NULL // Avoid an empty array
 };
@@ -226,7 +234,8 @@ static gyroSpiDetectFn_t gyroSpiDetectFnTable[] = {
 static bool detectSPISensorsAndUpdateDetectionResult(gyroDev_t *gyro, const gyroDeviceConfig_t *config)
 {
     SPI_TypeDef *instance = spiInstanceByDevice(SPI_CFG_TO_DEV(config->spiBus));
-    if (!instance) {
+
+    if (!instance || !config->csnTag) {
         return false;
     }
     spiBusSetInstance(&gyro->bus, instance);
@@ -246,23 +255,36 @@ static bool detectSPISensorsAndUpdateDetectionResult(gyroDev_t *gyro, const gyro
         sensor = (gyroSpiDetectFnTable[index])(&gyro->bus);
         if (sensor != MPU_NONE) {
             gyro->mpuDetectionResult.sensor = sensor;
+            busDeviceRegister(&gyro->bus);
+
             return true;
         }
     }
 
-    spiPreinitCsByTag(config->csnTag);
+    // Detection failed, disable CS pin again
+
+    spiPreinitByTag(config->csnTag);
 
     return false;
 }
 #endif
 
-void mpuDetect(gyroDev_t *gyro, const gyroDeviceConfig_t *config)
+void mpuPreInit(const struct gyroDeviceConfig_s *config)
+{
+#ifdef USE_SPI_GYRO
+    spiPreinitRegister(config->csnTag, IOCFG_IPU, 1);
+#else
+    UNUSED(config);
+#endif
+}
+
+bool mpuDetect(gyroDev_t *gyro, const gyroDeviceConfig_t *config)
 {
     // MPU datasheet specifies 30ms.
     delay(35);
 
     if (config->bustype == BUSTYPE_NONE) {
-        return;
+        return false;
     }
 
     if (config->bustype == BUSTYPE_GYRO_AUTO) {
@@ -273,19 +295,21 @@ void mpuDetect(gyroDev_t *gyro, const gyroDeviceConfig_t *config)
 
 #ifdef USE_I2C_GYRO
     if (gyro->bus.bustype == BUSTYPE_I2C) {
+        gyro->bus.busdev_u.i2c.device = I2C_CFG_TO_DEV(config->i2cBus);
         gyro->bus.busdev_u.i2c.address = config->i2cAddress ? config->i2cAddress : MPU_ADDRESS;
 
         uint8_t sig = 0;
         bool ack = busReadRegisterBuffer(&gyro->bus, MPU_RA_WHO_AM_I, &sig, 1);
 
         if (ack) {
+            busDeviceRegister(&gyro->bus);
             // If an MPU3050 is connected sig will contain 0.
             uint8_t inquiryResult;
             ack = busReadRegisterBuffer(&gyro->bus, MPU_RA_WHO_AM_I_LEGACY, &inquiryResult, 1);
             inquiryResult &= MPU_INQUIRY_MASK;
             if (ack && inquiryResult == MPUx0x0_WHO_AM_I_CONST) {
                 gyro->mpuDetectionResult.sensor = MPU_3050;
-                return;
+                return true;
             }
 
             sig &= MPU_INQUIRY_MASK;
@@ -295,14 +319,17 @@ void mpuDetect(gyroDev_t *gyro, const gyroDeviceConfig_t *config)
             } else if (sig == MPU6500_WHO_AM_I_CONST) {
                 gyro->mpuDetectionResult.sensor = MPU_65xx_I2C;
             }
-            return;
+            return true;
         }
     }
 #endif
 
 #ifdef USE_SPI_GYRO
     gyro->bus.bustype = BUSTYPE_SPI;
-    detectSPISensorsAndUpdateDetectionResult(gyro, config);
+
+    return detectSPISensorsAndUpdateDetectionResult(gyro, config);
+#else
+    return false;
 #endif
 }
 
@@ -318,7 +345,7 @@ void mpuGyroInit(gyroDev_t *gyro)
 uint8_t mpuGyroDLPF(gyroDev_t *gyro)
 {
     uint8_t ret = 0;
-    
+
     // If gyro is in 32KHz mode then the DLPF bits aren't used
     if (gyro->gyroRateKHz <= GYRO_RATE_8_kHz) {
         switch (gyro->hardware_lpf) {
@@ -333,10 +360,6 @@ uint8_t mpuGyroDLPF(gyroDev_t *gyro)
                 break;
 #endif
 
-            case GYRO_HARDWARE_LPF_1KHZ_SAMPLE:
-                ret = 1;
-                break;
-                
             case GYRO_HARDWARE_LPF_NORMAL:
             default:
                 ret = 0;
@@ -344,23 +367,6 @@ uint8_t mpuGyroDLPF(gyroDev_t *gyro)
         }
     }
     return ret;
-}
-
-uint8_t mpuGyroFCHOICE(gyroDev_t *gyro)
-{
-    if (gyro->gyroRateKHz > GYRO_RATE_8_kHz) {
-#ifdef USE_GYRO_DLPF_EXPERIMENTAL
-        if (gyro->hardware_32khz_lpf == GYRO_32KHZ_HARDWARE_LPF_EXPERIMENTAL) {
-            return FCB_8800_32;
-        } else {
-            return FCB_3600_32;
-        }
-#else
-        return FCB_3600_32;
-#endif
-    } else {
-        return FCB_DISABLED;  // Not in 32KHz mode, set FCHOICE to select 8KHz sampling
-    }
 }
 
 #ifdef USE_GYRO_REGISTER_DUMP

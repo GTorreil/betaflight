@@ -37,42 +37,24 @@
 
 #include "blackbox/blackbox.h"
 #include "drivers/io.h"
-#include "drivers/light_led.h"
 #include "drivers/nvic.h"
 #include "drivers/serial_usb_vcp.h"
+#include "drivers/system.h"
 #include "drivers/time.h"
 #include "drivers/usb_msc.h"
 
-#include "drivers/accgyro/accgyro_mpu.h"
+#include "msc/usbd_storage.h"
 
+#include "pg/sdcard.h"
 #include "pg/usb.h"
 
 #include "vcp_hal/usbd_cdc_interface.h"
+
 #include "usb_io.h"
 #include "usbd_msc.h"
-#include "msc/usbd_storage.h"
-
-#define DEBOUNCE_TIME_MS 20
-
-static IO_t mscButton;
-
-void mscInit(void)
-{
-    if (usbDevConfig()->mscButtonPin) {
-        mscButton = IOGetByTag(usbDevConfig()->mscButtonPin);
-        IOInit(mscButton, OWNER_USB_MSC_PIN, 0);
-        if (usbDevConfig()->mscButtonUsePullup) {
-            IOConfigGPIO(mscButton, IOCFG_IPU);
-        } else {
-            IOConfigGPIO(mscButton, IOCFG_IPD);
-        }
-    }
-}
 
 uint8_t mscStart(void)
 {
-    ledInit(statusLedConfig());
-
     //Start USB
     usbGenerateDisconnectPulse();
 
@@ -88,7 +70,20 @@ uint8_t mscStart(void)
     switch (blackboxConfig()->device) {
 #ifdef USE_SDCARD
     case BLACKBOX_DEVICE_SDCARD:
-        USBD_MSC_RegisterStorage(&USBD_Device, &USBD_MSC_MICRO_SDIO_fops);
+        switch (sdcardConfig()->mode) {
+#ifdef USE_SDCARD_SDIO
+        case SDCARD_MODE_SDIO:
+            USBD_MSC_RegisterStorage(&USBD_Device, &USBD_MSC_MICRO_SDIO_fops);
+            break;
+#endif
+#ifdef USE_SDCARD_SPI
+        case SDCARD_MODE_SPI:
+            USBD_MSC_RegisterStorage(&USBD_Device, &USBD_MSC_MICRO_SD_SPI_fops);
+            break;
+#endif
+        default:
+            return 1;
+        }
         break;
 #endif
 
@@ -112,49 +107,4 @@ uint8_t mscStart(void)
     return 0;
 }
 
-bool mscCheckBoot(void)
-{
-    if (*((__IO uint32_t *)BKPSRAM_BASE + 16) == MSC_MAGIC) {
-        return true;
-    }
-    return false;
-}
-
-bool mscCheckButton(void)
-{
-    bool result = false;
-    if (mscButton) {
-        uint8_t state = IORead(mscButton);
-        if (usbDevConfig()->mscButtonUsePullup) {
-            result = state == 0;
-        } else {
-            result = state == 1;
-        }
-    }
-
-    return result;
-}
-
-void mscWaitForButton(void)
-{
-    // In order to exit MSC mode simply disconnect the board, or push the button again.
-    while (mscCheckButton());
-    delay(DEBOUNCE_TIME_MS);
-    while (true) {
-        asm("NOP");
-        if (mscCheckButton()) {
-            *((uint32_t *)0x2001FFF0) = 0xFFFFFFFF;
-            delay(1);
-            NVIC_SystemReset();
-        }
-    }
-}
-
-void systemResetToMsc(void)
-{
-    *((__IO uint32_t*) BKPSRAM_BASE + 16) = MSC_MAGIC;
-
-    __disable_irq();
-    NVIC_SystemReset();
-}
 #endif

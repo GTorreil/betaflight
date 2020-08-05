@@ -33,6 +33,8 @@
 #include "drivers/io.h"
 #include "drivers/rcc.h"
 
+static uint8_t spiRegisteredDeviceCount = 0;
+
 spiDevice_t spiDevice[SPIDEV_COUNT];
 
 SPIDevice spiDeviceByInstance(SPI_TypeDef *instance)
@@ -69,35 +71,55 @@ SPI_TypeDef *spiInstanceByDevice(SPIDevice device)
     return spiDevice[device].dev;
 }
 
-bool spiInit(SPIDevice device)
+bool spiInit(SPIDevice device, bool leadingEdge)
 {
     switch (device) {
     case SPIINVALID:
         return false;
+
     case SPIDEV_1:
 #ifdef USE_SPI_DEVICE_1
-        spiInitDevice(device);
+        spiInitDevice(device, leadingEdge);
         return true;
 #else
         break;
 #endif
+
     case SPIDEV_2:
 #ifdef USE_SPI_DEVICE_2
-        spiInitDevice(device);
+        spiInitDevice(device, leadingEdge);
         return true;
 #else
         break;
 #endif
+
     case SPIDEV_3:
 #if defined(USE_SPI_DEVICE_3) && !defined(STM32F1)
-        spiInitDevice(device);
+        spiInitDevice(device, leadingEdge);
         return true;
 #else
         break;
 #endif
+
     case SPIDEV_4:
 #if defined(USE_SPI_DEVICE_4)
-        spiInitDevice(device);
+        spiInitDevice(device, leadingEdge);
+        return true;
+#else
+        break;
+#endif
+
+    case SPIDEV_5:
+#if defined(USE_SPI_DEVICE_5)
+        spiInitDevice(device, leadingEdge);
+        return true;
+#else
+        break;
+#endif
+
+    case SPIDEV_6:
+#if defined(USE_SPI_DEVICE_6)
+        spiInitDevice(device, leadingEdge);
         return true;
 #else
         break;
@@ -141,6 +163,11 @@ void spiResetErrorCounter(SPI_TypeDef *instance)
     }
 }
 
+bool spiBusIsBusBusy(const busDevice_t *bus)
+{
+    return spiIsBusBusy(bus->busdev_u.spi.instance);
+}
+
 uint8_t spiBusTransferByte(const busDevice_t *bus, uint8_t data)
 {
     return spiTransferByte(bus->busdev_u.spi.instance, data);
@@ -151,6 +178,11 @@ void spiBusWriteByte(const busDevice_t *bus, uint8_t data)
     IOLo(bus->busdev_u.spi.csnPin);
     spiBusTransferByte(bus, data);
     IOHi(bus->busdev_u.spi.csnPin);
+}
+
+bool spiBusRawTransfer(const busDevice_t *bus, const uint8_t *txData, uint8_t *rxData, int len)
+{
+    return spiTransfer(bus->busdev_u.spi.instance, txData, rxData, len);
 }
 
 bool spiBusWriteRegister(const busDevice_t *bus, uint8_t reg, uint8_t data)
@@ -164,7 +196,6 @@ bool spiBusWriteRegister(const busDevice_t *bus, uint8_t reg, uint8_t data)
 }
 
 bool spiBusRawReadRegisterBuffer(const busDevice_t *bus, uint8_t reg, uint8_t *data, uint8_t length)
-
 {
     IOLo(bus->busdev_u.spi.csnPin);
     spiTransferByte(bus->busdev_u.spi.instance, reg);
@@ -207,5 +238,62 @@ void spiBusSetInstance(busDevice_t *bus, SPI_TypeDef *instance)
 {
     bus->bustype = BUSTYPE_SPI;
     bus->busdev_u.spi.instance = instance;
+}
+
+void spiBusSetDivisor(busDevice_t *bus, uint16_t divisor)
+{
+    spiSetDivisor(bus->busdev_u.spi.instance, divisor);
+    // bus->busdev_u.spi.modeCache = bus->busdev_u.spi.instance->CR1;
+}
+
+#ifdef USE_SPI_TRANSACTION
+// Separate set of spiBusTransactionXXX to keep fast path for acc/gyros.
+
+void spiBusTransactionBegin(const busDevice_t *bus)
+{
+    spiBusTransactionSetup(bus);
+    IOLo(bus->busdev_u.spi.csnPin);
+}
+
+void spiBusTransactionEnd(const busDevice_t *bus)
+{
+    IOHi(bus->busdev_u.spi.csnPin);
+}
+
+bool spiBusTransactionTransfer(const busDevice_t *bus, const uint8_t *txData, uint8_t *rxData, int length)
+{
+    spiBusTransactionSetup(bus);
+    return spiBusTransfer(bus, txData, rxData, length);
+}
+
+bool spiBusTransactionWriteRegister(const busDevice_t *bus, uint8_t reg, uint8_t data)
+{
+    spiBusTransactionSetup(bus);
+    return spiBusWriteRegister(bus, reg, data);
+}
+
+uint8_t spiBusTransactionReadRegister(const busDevice_t *bus, uint8_t reg)
+{
+    spiBusTransactionSetup(bus);
+    return spiBusReadRegister(bus, reg);
+}
+
+bool spiBusTransactionReadRegisterBuffer(const busDevice_t *bus, uint8_t reg, uint8_t *data, uint8_t length)
+{
+    spiBusTransactionSetup(bus);
+    return spiBusReadRegisterBuffer(bus, reg, data, length);
+}
+#endif // USE_SPI_TRANSACTION
+
+void spiBusDeviceRegister(const busDevice_t *bus)
+{
+    UNUSED(bus);
+
+    spiRegisteredDeviceCount++;
+}
+
+uint8_t spiGetRegisteredDeviceCount(void)
+{
+    return spiRegisteredDeviceCount;
 }
 #endif

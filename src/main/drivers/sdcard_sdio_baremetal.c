@@ -31,17 +31,17 @@
 #include "drivers/nvic.h"
 #include "drivers/io.h"
 #include "drivers/dma.h"
+#include "drivers/dma_reqmap.h"
 
 #include "drivers/time.h"
+
+#include "pg/bus_spi.h" // For spiPinConfig_t, which is unused but should be defined
+#include "pg/sdio.h"
 
 #include "drivers/sdcard.h"
 #include "drivers/sdcard_impl.h"
 #include "drivers/sdcard_standard.h"
-
 #include "drivers/sdmmc_sdio.h"
-
-#include "pg/pg.h"
-#include "pg/sdio.h"
 
 // Use this to speed up writing to SDCARD... asyncfatfs has limited support for multiblock write
 #define FATFS_BLOCK_CACHE_SIZE 16
@@ -72,7 +72,7 @@ void cache_reset(void)
  * Returns true if the card has already been, or is currently, initializing and hasn't encountered enough errors to
  * trip our error threshold and be disabled (i.e. our card is in and working!)
  */
-bool sdcard_isFunctional(void)
+static bool sdcardSdio_isFunctional(void)
 {
     return sdcard.state != SDCARD_STATE_NOT_PRESENT;
 }
@@ -87,7 +87,7 @@ static void sdcard_reset(void)
 {
     if (SD_Init() != 0) {
         sdcard.failureCount++;
-        if (sdcard.failureCount >= SDCARD_MAX_CONSECUTIVE_FAILURES || sdcard_isInserted() == SD_NOT_PRESENT) {
+        if (sdcard.failureCount >= SDCARD_MAX_CONSECUTIVE_FAILURES || !sdcard_isInserted()) {
             sdcard.state = SDCARD_STATE_NOT_PRESENT;
         } else {
             sdcard.operationStartTime = millis();
@@ -173,7 +173,10 @@ static bool sdcard_checkInitDone(void)
 {
     if (SD_GetState()) {
         SD_CardType_t *sdtype = &SD_CardType;
-        SD_GetCardInfo();
+        SD_Error_t errorState = SD_GetCardInfo();
+        if (errorState != SD_OK) {
+            return false;
+        }
 
         sdcard.version = (*sdtype) ? 2 : 1;
         sdcard.highCapacity = (*sdtype == 2) ? 1 : 0;
@@ -187,33 +190,49 @@ static bool sdcard_checkInitDone(void)
 /**
  * Begin the initialization process for the SD card. This must be called first before any other sdcard_ routine.
  */
-void sdcard_init(const sdcardConfig_t *config)
+static void sdcardSdio_init(const sdcardConfig_t *config, const spiPinConfig_t *spiConfig)
 {
-    sdcard.enabled = config->enabled;
+    UNUSED(spiConfig);
+
+    sdcard.enabled = config->mode;
     if (!sdcard.enabled) {
         sdcard.state = SDCARD_STATE_NOT_PRESENT;
         return;
     }
-    sdcard.dmaIdentifier = config->dmaIdentifier;
+
+#ifdef USE_DMA_SPEC
+#if !defined(STM32H7) // H7 uses IDMA
+    const dmaChannelSpec_t *dmaChannelSpec = dmaGetChannelSpecByPeripheral(DMA_PERIPH_SDIO, 0, sdioConfig()->dmaopt);
+
+    if (!dmaChannelSpec) {
+        sdcard.state = SDCARD_STATE_NOT_PRESENT;
+        return;
+    }
+
+    sdcard.dmaIdentifier = dmaGetIdentifier(dmaChannelSpec->ref);
+
     if (sdcard.dmaIdentifier == 0) {
         sdcard.state = SDCARD_STATE_NOT_PRESENT;
         return;
     }
-    if (config->cardDetectTag) {
-        sdcard.cardDetectPin = IOGetByTag(config->cardDetectTag);
-    } else {
-        sdcard.cardDetectPin = IO_NONE;
-    }
-    if (config->cardDetectInverted) {
-    	sdcard.detectionInverted = 1;
-    }
+#endif
+#endif
     if (sdioConfig()->useCache) {
         sdcard.useCache = 1;
     } else {
         sdcard.useCache = 0;
     }
-    SD_Initialize_LL(dmaGetRefByIdentifier(sdcard.dmaIdentifier));
-    if (SD_IsDetected()) {
+#ifdef USE_DMA_SPEC
+#if defined(STM32H7) // H7 uses IDMA
+    SD_Initialize_LL(0);
+#else
+    SD_Initialize_LL((DMA_ARCH_TYPE *)dmaChannelSpec->ref);
+#endif
+#else
+    SD_Initialize_LL(SDCARD_SDIO_DMA_OPT);
+#endif
+
+    if (sdcard_isInserted()) {
         if (SD_Init() != 0) {
             sdcard.state = SDCARD_STATE_NOT_PRESENT;
             sdcard.failureCount++;
@@ -273,7 +292,7 @@ static sdcardOperationStatus_e sdcard_endWriteBlocks()
  *
  * Returns true if the card is ready to accept commands.
  */
-bool sdcard_poll(void)
+static bool sdcardSdio_poll(void)
 {
     if (!sdcard.enabled) {
         sdcard.state = SDCARD_STATE_NOT_PRESENT;
@@ -448,7 +467,7 @@ bool sdcard_poll(void)
  *     SDCARD_OPERATION_BUSY        - The card is already busy and cannot accept your write
  *     SDCARD_OPERATION_FAILURE     - Your write was rejected by the card, card will be reset
  */
-sdcardOperationStatus_e sdcard_writeBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
+static sdcardOperationStatus_e sdcardSdio_writeBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
 {
 
 #ifdef SDCARD_PROFILING
@@ -531,7 +550,7 @@ sdcardOperationStatus_e sdcard_writeBlock(uint32_t blockIndex, uint8_t *buffer, 
  *     SDCARD_OPERATION_BUSY        - The card is already busy and cannot accept your write
  *     SDCARD_OPERATION_FAILURE     - A fatal error occured, card will be reset
  */
-sdcardOperationStatus_e sdcard_beginWriteBlocks(uint32_t blockIndex, uint32_t blockCount)
+static sdcardOperationStatus_e sdcardSdio_beginWriteBlocks(uint32_t blockIndex, uint32_t blockCount)
 {
     if (sdcard.state != SDCARD_STATE_READY) {
         if (sdcard.state == SDCARD_STATE_WRITING_MULTIPLE_BLOCKS) {
@@ -564,7 +583,7 @@ sdcardOperationStatus_e sdcard_beginWriteBlocks(uint32_t blockIndex, uint32_t bl
  *     true - The operation was successfully queued for later completion, your callback will be called later
  *     false - The operation could not be started due to the card being busy (try again later).
  */
-bool sdcard_readBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
+static bool sdcardSdio_readBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
 {
     if (sdcard.state != SDCARD_STATE_READY) {
 		if (sdcard.state == SDCARD_STATE_WRITING_MULTIPLE_BLOCKS) {
@@ -611,23 +630,37 @@ bool sdcard_readBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationComp
 /**
  * Returns true if the SD card has successfully completed its startup procedures.
  */
-bool sdcard_isInitialized(void)
+static bool sdcardSdio_isInitialized(void)
 {
     return sdcard.state >= SDCARD_STATE_READY;
 }
 
-const sdcardMetadata_t* sdcard_getMetadata(void)
+static const sdcardMetadata_t* sdcardSdio_getMetadata(void)
 {
     return &sdcard.metadata;
 }
 
 #ifdef SDCARD_PROFILING
 
-void sdcard_setProfilerCallback(sdcard_profilerCallback_c callback)
+static void sdcardSdio_setProfilerCallback(sdcard_profilerCallback_c callback)
 {
     sdcard.profiler = callback;
 }
 
 #endif
 
+sdcardVTable_t sdcardSdioVTable = {
+    NULL,
+    sdcardSdio_init,
+    sdcardSdio_readBlock,
+    sdcardSdio_beginWriteBlocks,
+    sdcardSdio_writeBlock,
+    sdcardSdio_poll,
+    sdcardSdio_isFunctional,
+    sdcardSdio_isInitialized,
+    sdcardSdio_getMetadata,
+#ifdef SDCARD_PROFILING
+    sdcardSdio_setProfilerCallback,
+#endif
+};
 #endif

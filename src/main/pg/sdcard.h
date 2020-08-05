@@ -31,13 +31,14 @@ typedef enum {
 
 typedef struct sdcardConfig_s {
     uint8_t useDma;
-    uint8_t enabled;
     int8_t  device;
     ioTag_t cardDetectTag;
     ioTag_t chipSelectTag;
     uint8_t cardDetectInverted;
+#ifndef USE_DMA_SPEC
     uint8_t dmaIdentifier;
     uint8_t dmaChannel;
+#endif
     sdcardMode_e mode;
 } sdcardConfig_t;
 

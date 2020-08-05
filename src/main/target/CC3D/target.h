@@ -28,7 +28,6 @@
 
 #define USE_BEEPER
 #define BEEPER_PIN              PA15
-#define BEEPER_OPT              PA2
 
 #define USE_EXTI
 #define USE_GYRO_EXTI
@@ -55,7 +54,6 @@
 
 #define USE_ACC
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN       CW270_DEG
 
 // MPU6000 interrupts
 #define USE_MPU_DATA_READY_SIGNAL
@@ -98,8 +96,6 @@
 #define VBAT_ADC_PIN            PA0
 #define RSSI_ADC_PIN            PB0
 
-#define USE_SERIAL_4WAY_BLHELI_INTERFACE
-
 //#define USE_RANGEFINDER
 //#define USE_RANGEFINDER_HCSR04
 //#define RANGEFINDER_HCSR04_ECHO_PIN          PB0
@@ -108,7 +104,6 @@
 #undef USE_MAG
 
 #ifdef CC3D_OPBL
-#define SKIP_CLI_COMMAND_HELP
 //#undef USE_SERVOS
 #undef USE_BARO
 #undef USE_RANGEFINDER

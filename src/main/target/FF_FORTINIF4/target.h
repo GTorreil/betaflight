@@ -76,7 +76,6 @@
 #define USE_ACC_SPI_MPU6000
 #define USE_ACC_SPI_MPU6500
 #define USE_ACC_SPI_ICM20689
-#define ACC_1_ALIGN             CW180_DEG
 
 /*---------------------------------*/
 
@@ -99,8 +98,6 @@
 #define MAX7456_SPI_INSTANCE    SPI3
 #define MAX7456_SPI_CS_PIN      SPI3_NSS_PIN
 #endif
-#define MAX7456_SPI_CLK         (SPI_CLOCK_STANDARD) // 10MHz
-#define MAX7456_RESTORE_CLK     (SPI_CLOCK_FAST)
 /*---------------------------------*/
 
 /*-----------USB-UARTs-------------*/
@@ -109,7 +106,11 @@
 //#define USE_USB_DETECT
 
 #define USE_UART1
+#if defined(FF_FORTINIF4_REV03)
+#define UART1_RX_PIN            PB7
+#else 
 #define UART1_RX_PIN            PA10
+#endif	
 #define UART1_TX_PIN            PA9
 
 #define USE_UART4
@@ -193,7 +194,6 @@
 /*---------------------------------*/
 
 /*-------------ESCs----------------*/
-#define USE_SERIAL_4WAY_BLHELI_INTERFACE
 #define USE_ESCSERIAL
 #define ESCSERIAL_TIMER_TX_PIN  PB0  // (HARDARE=0)
 /*---------------------------------*/
@@ -212,8 +212,9 @@
 /*--------------TIMERS-------------*/
 #if defined(FF_FORTINIF4_REV03)
 #define USABLE_TIMER_CHANNEL_COUNT  7
+#define USED_TIMERS             ( TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) )
 #else
 #define USABLE_TIMER_CHANNEL_COUNT  6
-#endif
 #define USED_TIMERS             ( TIM_N(2) | TIM_N(3) | TIM_N(4) )
+#endif
 /*---------------------------------*/

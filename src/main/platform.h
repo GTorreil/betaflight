@@ -26,7 +26,30 @@
 #pragma GCC poison sprintf snprintf
 #endif
 
-#if defined(STM32F722xx) || defined(STM32F745xx) || defined(STM32F746xx) || defined(STM32F765xx)
+#if defined(STM32H743xx) || defined(STM32H750xx)
+#include "stm32h7xx.h"
+#include "stm32h7xx_hal.h"
+#include "system_stm32h7xx.h"
+
+#include "stm32h7xx_ll_spi.h"
+#include "stm32h7xx_ll_gpio.h"
+#include "stm32h7xx_ll_dma.h"
+#include "stm32h7xx_ll_rcc.h"
+#include "stm32h7xx_ll_bus.h"
+#include "stm32h7xx_ll_tim.h"
+#include "stm32h7xx_ll_system.h"
+#include "drivers/stm32h7xx_ll_ex.h"
+
+// Chip Unique ID on H7
+#define U_ID_0 (*(uint32_t*)UID_BASE)
+#define U_ID_1 (*(uint32_t*)(UID_BASE + 4))
+#define U_ID_2 (*(uint32_t*)(UID_BASE + 8))
+
+#ifndef STM32H7
+#define STM32H7
+#endif
+
+#elif defined(STM32F722xx) || defined(STM32F745xx) || defined(STM32F746xx) || defined(STM32F765xx)
 #include "stm32f7xx.h"
 #include "stm32f7xx_hal.h"
 #include "system_stm32f7xx.h"
@@ -41,15 +64,9 @@
 #include "drivers/stm32f7xx_ll_ex.h"
 
 // Chip Unique ID on F7
-#if defined(STM32F722xx)
-#define U_ID_0 (*(uint32_t*)0x1ff07a10)
-#define U_ID_1 (*(uint32_t*)0x1ff07a14)
-#define U_ID_2 (*(uint32_t*)0x1ff07a18)
-#else
-#define U_ID_0 (*(uint32_t*)0x1ff0f420)
-#define U_ID_1 (*(uint32_t*)0x1ff0f424)
-#define U_ID_2 (*(uint32_t*)0x1ff0f428)
-#endif
+#define U_ID_0 (*(uint32_t*)UID_BASE)
+#define U_ID_1 (*(uint32_t*)(UID_BASE + 4))
+#define U_ID_2 (*(uint32_t*)(UID_BASE + 8))
 
 #ifndef STM32F7
 #define STM32F7
@@ -108,5 +125,6 @@
 
 #include "target/common_pre.h"
 #include "target.h"
+#include "target/common_deprecated_post.h"
 #include "target/common_post.h"
 #include "target/common_defaults_post.h"

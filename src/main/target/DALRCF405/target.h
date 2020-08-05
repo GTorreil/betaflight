@@ -21,7 +21,7 @@
 #pragma once
 
 #define TARGET_BOARD_IDENTIFIER "DLF4"
-#define USBD_PRODUCT_STRING  "DALRCF405"
+#define USBD_PRODUCT_STRING     "DALRCF405"
 //----------------------------------------
 
 //LED & BEE------------------------------- 
@@ -46,24 +46,16 @@
 
 #define USE_GYRO
 #define USE_ACC
-//------ICM20689
-#define ICM20689_CS_PIN          PA4 
-#define ICM20689_SPI_INSTANCE    SPI1
+#define GYRO_1_CS_PIN           PA4
+#define GYRO_1_SPI_INSTANCE     SPI1
 
 #define USE_GYRO_SPI_ICM20689
-#define GYRO_ICM20689_ALIGN      CW90_DEG
-
 #define USE_ACC_SPI_ICM20689
-#define ACC_ICM20689_ALIGN       CW90_DEG
 //------MPU6000
-#define GYRO_1_CS_PIN            PA4 
-#define GYRO_1_SPI_INSTANCE      SPI1
-
 #define USE_GYRO_SPI_MPU6000
-#define GYRO_1_ALIGN            CW90_DEG
-
 #define USE_ACC_SPI_MPU6000
-#define ACC_1_ALIGN             CW90_DEG
+
+#define GYRO_1_ALIGN            CW90_DEG
 
 //Baro & MAG------------------------------- 
 #define USE_I2C
@@ -137,7 +129,9 @@
 
 //ADC ----------------------------------------------
 #define USE_ADC
-#define ADC1_DMA_STREAM         DMA2_Stream0
+#define ADC_INSTANCE         ADC1  // Default added
+#define ADC1_DMA_OPT            0  // DMA 2 Stream 0 Channel 0 
+
 #define VBAT_ADC_PIN            PC2
 #define CURRENT_METER_ADC_PIN   PC1
 #define RSSI_ADC_PIN            PA0  //TIM5_CH1 & UART4_TX & TELEMETRY & FPORT
@@ -145,21 +139,15 @@
 #define DEFAULT_VOLTAGE_METER_SOURCE    VOLTAGE_METER_ADC
 #define DEFAULT_CURRENT_METER_SOURCE    CURRENT_METER_ADC
 
-#define ENABLE_DSHOT_DMAR       true
+#define ENABLE_DSHOT_DMAR       DSHOT_DMAR_ON
 
 #define USE_ESCSERIAL
 #define ESCSERIAL_TIMER_TX_PIN PA3
-#define USE_SERIAL_4WAY_BLHELI_INTERFACE
-
 
 #define TARGET_IO_PORTA         0xffff
 #define TARGET_IO_PORTB         0xffff
 #define TARGET_IO_PORTC         0xffff
 #define TARGET_IO_PORTD         (BIT(2))
 
-
 #define USABLE_TIMER_CHANNEL_COUNT 11
 #define USED_TIMERS             (TIM_N(1)|TIM_N(2)|TIM_N(3)|TIM_N(4)|TIM_N(8)|TIM_N(12))
-
-
-

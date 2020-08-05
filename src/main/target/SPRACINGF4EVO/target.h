@@ -26,9 +26,6 @@
 #ifndef SPRACINGF4EVO_REV
 #define SPRACINGF4EVO_REV 2
 #endif
-#ifdef SPRACINGF4EVODG
-#define USE_MULTI_GYRO
-#endif
 
 #define USBD_PRODUCT_STRING     "SP Racing F4 EVO"
 
@@ -43,11 +40,9 @@
 #define USE_EXTI
 #define USE_GYRO_EXTI
 #define GYRO_1_EXTI_PIN         PC13
-#ifdef USE_MULTI_GYRO
+#ifdef SPRACINGF4EVODG
 #define GYRO_2_EXTI_PIN         PC5 // GYRO 2 / NC on prototype boards, but if it was it'd be here.
-#endif
 
-#ifndef SPRACINGF4EVODG
 #define USE_MPU_DATA_READY_SIGNAL
 #define ENSURE_MPU_DATA_READY_IS_LOW
 #endif
@@ -62,14 +57,11 @@
 #define USE_ACC
 #define USE_ACC_SPI_MPU6500
 
-#ifndef USE_MULTI_GYRO
-#define ACC_1_ALIGN                 CW0_DEG
+#ifndef SPRACINGF4EVODG
 #define GYRO_1_ALIGN                CW0_DEG
 #else
 #define GYRO_1_ALIGN                CW0_DEG
 #define GYRO_2_ALIGN                CW0_DEG
-#define ACC_1_ALIGN                 CW0_DEG
-#define ACC_2_ALIGN                 CW0_DEG
 #endif
 
 #define USE_BARO
@@ -141,7 +133,6 @@
 
 #if !defined(SPRACINGF4EVODG)
 #define USE_VTX_RTC6705
-#define VTX_RTC6705_OPTIONAL    // SPI3 on an F4 EVO may be used for RTC6705 VTX control.
 
 #define RTC6705_CS_PIN          SPI3_NSS_PIN
 #define RTC6705_SPI_INSTANCE    SPI3
@@ -153,10 +144,9 @@
 #define SDCARD_DETECT_PIN                   PC14
 #define SDCARD_SPI_INSTANCE                 SPI2
 #define SDCARD_SPI_CS_PIN                   SPI2_NSS_PIN
-#define SDCARD_DMA_CHANNEL_TX               DMA1_Stream4
-#define SDCARD_DMA_CHANNEL                  0
+#define SPI2_TX_DMA_OPT                     0     // DMA 1 Stream 4 Channel 0
 
-#ifndef USE_MULTI_GYRO
+#ifndef SPRACINGF4EVODG
 #define GYRO_1_CS_PIN           SPI1_NSS_PIN
 #define GYRO_1_SPI_INSTANCE     SPI1
 #else
@@ -170,11 +160,13 @@
 #define USE_ADC
 // It's possible to use ADC1 or ADC3 on this target, same pins.
 //#define ADC_INSTANCE            ADC1
-//#define ADC1_DMA_STREAM DMA2_Stream0
+//#define ADC1_DMA_OPT    0  // DMA 2 Stream 0 Channel 0 
+
 
 // Using ADC3 frees up DMA2_Stream0 for SPI1_RX
 #define ADC_INSTANCE            ADC3
-#define ADC3_DMA_STREAM DMA2_Stream1
+#define ADC3_DMA_OPT    1  // DMA 2 Stream 1 Channel 2 
+
 
 #define VBAT_ADC_PIN            PC1
 #define CURRENT_METER_ADC_PIN   PC2
@@ -198,8 +190,6 @@
 #define DEFAULT_FEATURES        (FEATURE_TRANSPONDER | FEATURE_RSSI_ADC | FEATURE_TELEMETRY | FEATURE_OSD | FEATURE_LED_STRIP)
 #define SERIALRX_UART           SERIAL_PORT_USART2
 #define SERIALRX_PROVIDER       SERIALRX_SBUS
-
-#define USE_SERIAL_4WAY_BLHELI_INTERFACE
 
 #define TARGET_IO_PORTA         0xffff
 #define TARGET_IO_PORTB         0xffff

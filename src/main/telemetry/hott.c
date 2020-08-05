@@ -63,13 +63,13 @@
 #include "platform.h"
 
 
-#ifdef USE_TELEMETRY
+#ifdef USE_TELEMETRY_HOTT
 
 #include "build/build_config.h"
 #include "build/debug.h"
 
 #include "common/axis.h"
-#include "common/maths.h" 
+#include "common/maths.h"
 #include "common/time.h"
 
 #include "drivers/serial.h"
@@ -124,7 +124,7 @@ static uint8_t hottMsgCrc;
 #define HOTT_PORT_MODE MODE_RXTX // must be opened in RXTX so that TX and RX pins are allocated.
 
 static serialPort_t *hottPort = NULL;
-static serialPortConfig_t *portConfig;
+static const serialPortConfig_t *portConfig;
 
 static bool hottTelemetryEnabled =  false;
 static portSharing_e hottPortSharing;
@@ -237,10 +237,7 @@ void hottPrepareGPSResponse(HOTT_GPS_MSG_t *hottGPSMessage)
     hottGPSMessage->home_distance_L = GPS_distanceToHome & 0x00FF;
     hottGPSMessage->home_distance_H = GPS_distanceToHome >> 8;
 
-    int32_t altitudeM = gpsSol.llh.altCm / 100;
-    if (!STATE(GPS_FIX)) {
-        altitudeM = getEstimatedAltitudeCm() / 100;
-    }
+    int32_t altitudeM = getEstimatedAltitudeCm() / 100;
 
     const uint16_t hottGpsAltitude = constrain(altitudeM + HOTT_GPS_ALTITUDE_OFFSET, 0 , UINT16_MAX); // gpsSol.llh.alt in m ; offset = 500 -> O m
 
@@ -279,10 +276,11 @@ static inline void updateAlarmBatteryStatus(HOTT_EAM_MSG_t *hottEAMMessage)
 
 static inline void hottEAMUpdateBattery(HOTT_EAM_MSG_t *hottEAMMessage)
 {
-    hottEAMMessage->main_voltage_L = getBatteryVoltage() & 0xFF;
-    hottEAMMessage->main_voltage_H = getBatteryVoltage() >> 8;
-    hottEAMMessage->batt1_voltage_L = getBatteryVoltage() & 0xFF;
-    hottEAMMessage->batt1_voltage_H = getBatteryVoltage() >> 8;
+    const uint16_t volt = getLegacyBatteryVoltage();
+    hottEAMMessage->main_voltage_L = volt & 0xFF;
+    hottEAMMessage->main_voltage_H = volt >> 8;
+    hottEAMMessage->batt1_voltage_L = volt & 0xFF;
+    hottEAMMessage->batt1_voltage_H = volt >> 8;
 
     updateAlarmBatteryStatus(hottEAMMessage);
 }
@@ -469,9 +467,9 @@ static void hottPrepareMessages(void) {
 static void hottTextmodeStart()
 {
     // Increase menu speed
-    cfTaskInfo_t taskInfo;
+    taskInfo_t taskInfo;
     getTaskInfo(TASK_TELEMETRY, &taskInfo);
-    telemetryTaskPeriod = taskInfo.desiredPeriod;
+    telemetryTaskPeriod = taskInfo.desiredPeriodUs;
     rescheduleTask(TASK_TELEMETRY, TASK_PERIOD_HZ(HOTT_TEXTMODE_TASK_PERIOD));
 
     rxSchedule = HOTT_TEXTMODE_RX_SCHEDULE;
@@ -483,6 +481,7 @@ static void hottTextmodeStop()
     // Set back to avoid slow down of the FC
     if (telemetryTaskPeriod > 0) {
         rescheduleTask(TASK_TELEMETRY, telemetryTaskPeriod);
+        telemetryTaskPeriod = 0;
     }
 
     rxSchedule = HOTT_RX_SCHEDULE;

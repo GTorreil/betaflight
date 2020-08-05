@@ -28,7 +28,6 @@
 // Exported symbols
 extern uint32_t accTimeSum;
 extern int accSumCount;
-extern float accVelScale;
 extern int32_t accSum[XYZ_AXIS_COUNT];
 extern bool canUseGPSHeading;
 extern float accAverage[XYZ_AXIS_COUNT];
@@ -67,7 +66,6 @@ PG_DECLARE(imuConfig_t, imuConfig);
 typedef struct imuRuntimeConfig_s {
     float dcm_ki;
     float dcm_kp;
-    uint8_t small_angle;
 } imuRuntimeConfig_t;
 
 void imuConfigure(uint16_t throttle_correction_angle, uint8_t throttle_correction_value);
@@ -87,8 +85,7 @@ void imuSetHasNewData(uint32_t dt);
 #endif
 #endif
 
-void imuQuaternionComputeProducts(quaternion *quat, quaternionProducts *quatProd);
 bool imuQuaternionHeadfreeOffsetSet(void);
 void imuQuaternionHeadfreeTransformVectorEarthToBody(t_fp_vector_def * v);
-void imuComputeQuaternionFromRPY(quaternionProducts *qP, int16_t initialRoll, int16_t initialPitch, int16_t initialYaw);
 bool shouldInitializeGPSHeading(void);
+bool isUpright(void);

@@ -28,9 +28,13 @@
 #include "drivers/nvic.h"
 #include "drivers/io.h"
 #include "dma.h"
+#include "dma_reqmap.h"
 
 #include "drivers/bus_spi.h"
 #include "drivers/time.h"
+
+#include "pg/bus_spi.h"
+#include "pg/sdcard.h"
 
 #include "sdcard.h"
 #include "sdcard_impl.h"
@@ -63,16 +67,16 @@ sdcard_t sdcard;
 
 STATIC_ASSERT(sizeof(sdcardCSD_t) == 16, sdcard_csd_bitfields_didnt_pack_properly);
 
-void sdcardInsertionDetectDeinit(void)
+static void sdcardInsertionDetectInit(const sdcardConfig_t *config)
 {
-    if (sdcard.cardDetectPin) {
-        IOInit(sdcard.cardDetectPin, OWNER_FREE, 0);
-        IOConfigGPIO(sdcard.cardDetectPin, IOCFG_IN_FLOATING);
+    if (config->cardDetectTag) {
+        sdcard.cardDetectPin = IOGetByTag(config->cardDetectTag);
+        sdcard.detectionInverted = config->cardDetectInverted;
+    } else {
+        sdcard.cardDetectPin = IO_NONE;
+        sdcard.detectionInverted = false;
     }
-}
 
-void sdcardInsertionDetectInit(void)
-{
     if (sdcard.cardDetectPin) {
         IOInit(sdcard.cardDetectPin, OWNER_SDCARD_DETECT, 0);
         IOConfigGPIO(sdcard.cardDetectPin, IOCFG_IPU);
@@ -92,5 +96,89 @@ bool sdcard_isInserted(void)
         }
     }
     return result;
+}
+
+/**
+ * Dispatch
+ */
+sdcardVTable_t *sdcardVTable;
+
+void sdcard_preInit(const sdcardConfig_t *config)
+{
+#ifdef USE_SDCARD_SPI
+    sdcardSpiVTable.sdcard_preInit(config);
+#else
+    UNUSED(config);
+#endif
+}
+
+void sdcard_init(const sdcardConfig_t *config)
+{
+    sdcardInsertionDetectInit(config);
+
+    switch (config->mode) {
+#ifdef USE_SDCARD_SPI
+    case SDCARD_MODE_SPI:
+        sdcardVTable = &sdcardSpiVTable;
+        break;
+#endif
+#ifdef USE_SDCARD_SDIO
+    case SDCARD_MODE_SDIO:
+        sdcardVTable = &sdcardSdioVTable;
+        break;
+#endif
+    default:
+        break;
+    }
+
+    if (sdcardVTable) {
+        sdcardVTable->sdcard_init(config, spiPinConfig(0));
+    }
+}
+
+bool sdcard_readBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
+{
+    return sdcardVTable->sdcard_readBlock(blockIndex, buffer, callback, callbackData);
+}
+
+sdcardOperationStatus_e sdcard_beginWriteBlocks(uint32_t blockIndex, uint32_t blockCount)
+{
+    return sdcardVTable->sdcard_beginWriteBlocks(blockIndex, blockCount);
+}
+
+sdcardOperationStatus_e sdcard_writeBlock(uint32_t blockIndex, uint8_t *buffer, sdcard_operationCompleteCallback_c callback, uint32_t callbackData)
+{
+    return sdcardVTable->sdcard_writeBlock(blockIndex, buffer, callback, callbackData);
+}
+
+bool sdcard_poll(void)
+{
+    // sdcard_poll is called from taskMain() via afatfs_poll() and  for USE_SDCARD.
+    if (sdcardVTable) {
+        return sdcardVTable->sdcard_poll();
+    } else {
+        return false;
+    }
+}
+
+bool sdcard_isFunctional(void)
+{
+    // sdcard_isFunctional is called from multiple places, including the case of hardware implementation
+    // without a detect pin in which case sdcard_isInserted() always returns true.
+    if (sdcardVTable) {
+        return sdcardVTable->sdcard_isFunctional();
+    } else {
+        return false;
+    }
+}
+
+bool sdcard_isInitialized(void)
+{
+    return sdcardVTable->sdcard_isInitialized();
+}
+
+const sdcardMetadata_t* sdcard_getMetadata(void)
+{
+    return sdcardVTable->sdcard_getMetadata();
 }
 #endif
